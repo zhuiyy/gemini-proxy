@@ -1,20 +1,24 @@
-# 使用稳定且软件丰富的 Debian 系统
 FROM debian:bullseye-slim
 
-# 更新软件列表，并安装我们需要的工具：
-# openssh-client: 我们的核心工具，用于建立反向SSH通道
-# netcat-openbsd: 我们的“门卫”，用于应付健康检查
+# 安装必要的软件包
+# tmate: 核心中转工具
+# netcat-openbsd: 用于欺骗 Render 健康检查
+# curl: 调试用
 RUN apt-get update && apt-get install -y \
-    openssh-client \
+    tmate \
     netcat-openbsd \
-    --no-install-recommends
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# 复制我们的启动脚本
-COPY run.sh /run.sh
-RUN chmod +x /run.sh
+# 设置工作目录
+WORKDIR /app
 
-# 声明我们会使用 10000 端口
+# 复制启动脚本
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# Render 要求暴露一个端口（虽然我们用 netcat 欺骗它，但 Dockerfile 里最好声明一下）
 EXPOSE 10000
 
-# 运行启动脚本
-CMD ["/run.sh"]
+# 启动命令
+CMD ["/app/start.sh"]
