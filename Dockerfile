@@ -13,4 +13,3 @@ RUN chmod +x /run.sh
 
 # 设置容器启动时要执行的命令
 CMD ["/run.sh"]
-```    *   粘贴完成后，滚动到页面下方，点击 `Commit new file` 按钮。
