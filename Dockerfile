@@ -1,24 +1,24 @@
+# 使用一个精简的 Debian 系统作为基础
 FROM debian:bullseye-slim
 
-# 安装必要的软件包
-# tmate: 核心中转工具
-# netcat-openbsd: 用于欺骗 Render 健康检查
-# curl: 调试用
+# 在容器内部更新软件列表，并安装我们需要的工具
 RUN apt-get update && apt-get install -y \
     tmate \
     netcat-openbsd \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 设置工作目录
+# --- 关键部分 ---
+# 在容器内部，创建并切换到 /app 目录。
+# 这个目录只存在于容器里，您的本地项目不需要它。
 WORKDIR /app
 
-# 复制启动脚本
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+# 将您本地的 run.sh 文件，复制到容器内部的 /app/ 目录中
+COPY run.sh /app/run.sh
+# 赋予这个脚本执行权限
+RUN chmod +x /app/run.sh
 
-# Render 要求暴露一个端口（虽然我们用 netcat 欺骗它，但 Dockerfile 里最好声明一下）
+# 声明容器会监听 10000 端口（用于Render的健康检查）
 EXPOSE 10000
 
-# 启动命令
-CMD ["/app/start.sh"]
+# 当容器启动时，执行位于容器内部 /app/ 目录下的 run.sh 脚本
+CMD ["/app/run.sh"]
