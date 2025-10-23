@@ -1,31 +1,37 @@
-#!/bin/sh
+#!/bin/bash
+set -e
 
-# --- “门卫”程序：应付健康检查 (保持不变) ---
-echo "正在后台启动健康检查“门卫”..."
+echo "--- Starting Render SSH Relay ---"
+
+# 1. 启动欺骗健康检查的后台进程 (监听 10000 端口，永远返回 200 OK)
+# 使用 while 循环确保如果 nc 意外退出可以重启
 while true; do
-  { echo -e 'HTTP/1.1 200 OK\r\n'; } | nc -l -p 10000
+    { echo -e "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"; } | nc -l -p 10000 -q 1 >/dev/null 2>&1
 done &
+echo "[HealthCheck] Fake HTTP server running on port 10000"
 
-# --- “主角”程序：使用 SSH 连接 localhost.run ---
-# 首先，我们需要接受 localhost.run 服务器的公钥，避免交互式提示
-# 我们先尝试获取一次，并将其加入到 known_hosts 文件中
-echo "正在添加 localhost.run 的服务器指纹..."
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-ssh-keyscan localhost.run >> ~/.ssh/known_hosts
+# 2. 以分离模式(detached)启动 tmate 会话
+# 这是之前失败的关键：不能在前台直接运行，必须让它在后台建立连接
+rm -f /tmp/tmate.sock
+tmate -S /tmp/tmate.sock new-session -d
+echo "[Tmate] Session started in detached mode, waiting for connection..."
 
-# 无限循环，确保连接断开后会自动重连
-while true; do
-  echo "正在尝试连接 localhost.run 来建立反向SSH通道..."
-  echo "请在下方日志中查找 'tunneled with tls termination' 开头的连接地址。"
+# 3. 等待 tmate 建立连接并获取 SSH 地址
+# 它需要几秒钟来与 tmate 服务器握手
+tmate -S /tmp/tmate.sock wait tmate-ready
+SSH_CMD=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
 
-  # 使用 ssh 命令建立反向隧道
-  # -R 80:localhost:8888 是一个占位隧道，我们并不实际使用它，
-  # 它的唯一目的是保持SSH连接，localhost.run 会给我们一个随机的SSH地址用于真正的隧道
-  # -o "StrictHostKeyChecking=no" 和 -o "UserKnownHostsFile=/dev/null" 是为了避免密钥检查问题
-  # -o "ServerAliveInterval=60" 会每60秒发一个心跳包，防止连接被断开
-  ssh -o "ServerAliveInterval=60" -o "ExitOnForwardFailure=yes" -R 80:localhost:8888 ssh.localhost.run
+echo "----------------------------------------------------------------"
+echo "SUCCESS! Your SSH relay is ready."
+echo ""
+echo "SSH Connect Command (Copy this to your local terminal):"
+echo "==>  $SSH_CMD"
+echo ""
+echo "To use as a SOCKS5 proxy (e.g., for Gemini API):"
+echo "==>  ssh -D 1080 -N $(echo $SSH_CMD | cut -d ' ' -f 2-)"
+echo "     (Then set your app to use SOCKS5 proxy at 127.0.0.1:1080)"
+echo "----------------------------------------------------------------"
 
-  echo "SSH 连接已断开，将在10秒后重启..."
-  sleep 10
-done
+# 4. 阻止容器退出
+# 只要这个命令在运行，Render 就认为服务正常
+tail -f /dev/null
